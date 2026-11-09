@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import fsp from "node:fs/promises";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 
@@ -51,8 +52,8 @@ elif args[0] == "remove":
     kid = args[1]
     save([k for k in keys if k["id"] != kid])
     print("Gateway key removed")
-elif args[0] in ("accounts", "mcp"):
-    kid, field = args[1], "accounts" if args[0] == "accounts" else "mcp"
+elif args[0] == "accounts":
+    kid, field = args[1], "accounts"
     values = [a for a in args[2:] if a != "all"]
     for k in keys:
         if k["id"] == kid:
@@ -64,7 +65,9 @@ elif args[0] in ("accounts", "mcp"):
 elif args[0] == "list":
     print("ID\\tNAME")
 else:
-    sys.exit("unknown")
+    # 和真的 magpie 一样：不认识的子命令打 usage 并以非零退出。
+    sys.stderr.write("usage: magpie gateway-key list | add <name> | accounts <id> ...\\n")
+    sys.exit(1)
 `;
 
 let dir;
@@ -104,6 +107,23 @@ describe("server", () => {
   test("api needs the token", async () => {
     const res = await fetch(`http://127.0.0.1:${server.port}/api/keys`);
     expect(res.status).toBe(401);
+  });
+
+  // 界面是 vite 的构建产物，服务只做注入 + 静态托管。
+  test("serves the built ui and injects the token", async () => {
+    const res = await fetch(`http://127.0.0.1:${server.port}/`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    const html = await res.text();
+    expect(html).toContain(token());
+    expect(html).not.toContain("%%TOKEN%%");
+
+    const asset = html.match(/\/assets\/[A-Za-z0-9._-]+\.js/)?.[0];
+    if (asset) {
+      const js = await fetch(`http://127.0.0.1:${server.port}${asset}`);
+      expect(js.status).toBe(200);
+      expect(js.headers.get("content-type")).toContain("javascript");
+    }
   });
 
   test("starts empty", async () => {
@@ -156,6 +176,28 @@ describe("server", () => {
     expect(patched.body.key.maxConcurrency).toBe(4);
   });
 
+  // 编辑弹窗会把没改过的账号一起发回来；不能因此去跑一遍 CLI，
+  // 否则 magpie 少一个子命令就会把整次保存变成 400。
+  test("saves a detail-shaped patch without extra cli calls", async () => {
+    const id = (await call("/api/keys?usage=off")).body.keys.find((k) => k.name === "Alice 2").id;
+    const patched = await call(`/api/keys/${id}`, {
+      method: "PATCH",
+      body: {
+        name: "Alice 2",
+        off: true,
+        expires: null,
+        accounts: "",
+        models: "openai/*, anthropic/claude-*",
+        maxConcurrency: 4,
+        quotas: false,
+        issues: true,
+        limits: [{ period: "day", tokens: 50000, cost: 2 }],
+      },
+    });
+    expect(patched.status).toBe(200);
+    expect(patched.body.key.limits).toEqual([{ period: "day", tokens: 50000, cost: 2 }]);
+  });
+
   test("rotates and deletes", async () => {
     const id = (await call("/api/keys?usage=off")).body.keys.find((k) => k.name === "team-02").id;
     const rotated = await call(`/api/keys/${id}/rotate`, { method: "POST" });
@@ -165,6 +207,28 @@ describe("server", () => {
     expect(removed.status).toBe(200);
     const left = (await call("/api/keys?usage=off")).body.keys;
     expect(left.some((k) => k.id === id)).toBe(false);
+  });
+
+  // 网关暂时不认新密钥时，轮换已经生效了：照常返回明文，只带一句提醒。
+  test("rotation hands out the secret even when the gateway lags", async () => {
+    const stub = http.createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end('{"key":"","limited":false}');
+    });
+    await new Promise((resolve) => stub.listen(0, "127.0.0.1", resolve));
+    const prev = process.env.MAGPIE_ADDR;
+    process.env.MAGPIE_ADDR = `127.0.0.1:${stub.address().port}`;
+    try {
+      const id = (await call("/api/keys?usage=off")).body.keys.find((k) => k.name === "Alice 2").id;
+      await call(`/api/keys/${id}`, { method: "PATCH", body: { off: false } });
+      const rotated = await call(`/api/keys/${id}/rotate`, { method: "POST" });
+      expect(rotated.status).toBe(200);
+      expect(rotated.body.secret.startsWith("sk-magpie-key-")).toBe(true);
+      expect(rotated.body.warning).toBeTruthy();
+    } finally {
+      process.env.MAGPIE_ADDR = prev;
+      await new Promise((resolve) => stub.close(resolve));
+    }
   });
 
   test("rejects an invalid limit", async () => {

@@ -9,7 +9,7 @@ magpie 自带的 Gateway 页面是给自己用的：一把共享 key，改不了
 **用户与密钥**
 
 - 一次发 1–100 把 key，名称按前缀自动编号（`team-a-01`、`team-a-02`…）。
-- 每把 key 可以设：模型白名单（`openai/*`、`anthropic/claude-*`）、限额（每天 / 每周 / 每月 / N 天 / N 小时，按 tokens 或美元，最多 5 条）、并发上限、到期时间、只读、是否允许读额度卡片、是否允许签发短期 key、绑定的账号与 MCP。
+- 每把 key 可以设：模型白名单（`openai/*`、`anthropic/claude-*`）、限额（每天 / 每周 / 每月 / N 天 / N 小时，按 tokens 或美元，最多 5 条）、并发上限、到期时间、只读、是否允许读额度卡片、是否允许签发短期 key、绑定的账号。
 - 新建后**明文只显示一次**，可以逐条复制或整批导出。
 - 列表里能直接看到每把 key 今天 / 近 7 天 / 近 30 天的调用数、错误数、花费。
 - 随时改名、改限额、改模型、停用 / 启用、轮换密钥、删除。轮换和删除都有二次确认。
@@ -57,9 +57,9 @@ magpie 的插件页面跑在 `sandbox="allow-scripts"` 的 iframe 里，CSP 是 
 magpie 窗口
 └── iframe（sandbox=allow-scripts，只能加载自己的文件）
     └── location.replace → http://127.0.0.1:3478/
-        ├── ui/            界面（无构建，原生 JS）
+        ├── ui/            界面（React + Ant Design，构建产物在 ui/dist）
         └── lib/server.mjs 本地接口
-            ├── magpie gateway-key …   发 key / 轮换 / 删 key / 改账号与 MCP
+            ├── magpie gateway-key …   发 key / 轮换 / 删 key / 改账号
             ├── ~/.config/magpie/caller-keys.json  限额、模型、并发、到期
             └── 网关 127.0.0.1:3425     用量、请求明细、模型目录
 ```
@@ -90,24 +90,32 @@ magpie 窗口
 
 - `magpie.page.service` 目前没有写进公开文档（社区插件 `@magpie-community/page-chat` 用的也是它）。magpie 改了这个字段的话，页面会退化成一张静态说明页。
 - 默认的共享 key（LAN key）不能在插件里改名、停用或设只读——那是 magpie 自己 Gateway 页面管的。插件里会明确拒绝并提示。
-- 账号和 MCP 的绑定走 `magpie gateway-key accounts|mcp`，由 magpie 自己校验 provider 是否存在。
+- 账号绑定走 `magpie gateway-key accounts`，由 magpie 自己校验 provider 是否存在。magpie 0.1.3078 的 `gateway-key` 没有 `mcp` 子命令，所以插件不提供 per-key 的 MCP 绑定。
 - 导出落在运行 magpie 的那台机器上。沙箱页面不能直接下载，这是取舍。
 
 ## 开发
 
 ```bash
-bun test          # 26 个测试：校验、文件读写、HTTP 接口
+npm install       # React / Ant Design / zustand / vite / typescript
+npm run build     # tsc 检查 + vite 打包到 ui/dist（提交了构建产物，装插件时不用再 build）
+npm run dev:ui    # vite dev server，/api 代理到 127.0.0.1:3478
+
+bun test          # 29 个测试：校验、文件读写、HTTP 接口、静态页
 bun run serve     # 不起 magpie，直接跑服务，浏览器开 http://127.0.0.1:3478/
 ```
 
 测试用假的 `magpie` CLI 和一个临时配置目录，不会碰你真实的 key。环境变量 `MAGPIE_ADMIN_CONFIG_DIR`、`MAGPIE_BIN`、`MAGPIE_ADDR` 可以覆盖配置目录、CLI 路径和网关地址。
+
+界面是 React 19 + Ant Design 6 + TypeScript，状态用 zustand，打包用 vite。主题跟随系统的 `prefers-color-scheme`（Ant Design 的 darkAlgorithm），并关掉了 Ant Design 的所有动效（`wave` 和 `token.motion`），因为插件页在 magpie 的沙箱 iframe 里，动画只会让人等。
 
 目录：
 
 ```
 index.mjs          插件宿主入口（import 时起服务）
 page/              在 magpie 里跑的那一页，只负责跳转
-ui/                真正的界面
+ui/src/            界面源码（App / views / modals / store / api / types）
+ui/dist/           vite 构建产物，服务直接托管
+ui/vite.config.ts  base "./"、target safari17、dev 代理
 lib/server.mjs     本地 HTTP 接口
 lib/store.mjs      caller-keys.json 的读写与加锁
 lib/cli.mjs        magpie gateway-key 的封装

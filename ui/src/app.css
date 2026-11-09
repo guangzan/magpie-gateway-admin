@@ -1,0 +1,49 @@
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 沙箱里没有滚动条样式，这里只做最轻的收边 */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.rowtitle {
+  font-weight: 500;
+}
+
+.sub {
+  opacity: 0.62;
+  font-size: 12px;
+}
+
+.copybox {
+  width: 100%;
+  resize: vertical;
+  font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  background: transparent;
+  color: inherit;
+}
