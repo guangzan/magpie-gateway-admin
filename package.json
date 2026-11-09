@@ -1,0 +1,49 @@
+{
+  "name": "magpie-gateway-admin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "多用户（多 key）管理 magpie 网关：批量发 key、限额、模型权限、用量看板",
+  "type": "module",
+  "main": "index.mjs",
+  "exports": {
+    ".": "./index.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "lib",
+    "page",
+    "ui",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "serve": "bun run serve.mjs"
+  },
+  "keywords": [
+    "magpie",
+    "magpie-plugin",
+    "magpie-page"
+  ],
+  "engines": {
+    "bun": ">=1.1"
+  },
+  "magpie": {
+    "page": {
+      "title": "Gateway Admin",
+      "titles": {
+        "zh": "网关用户管理",
+        "zh-TW": "閘道使用者管理",
+        "ja": "ゲートウェイ管理"
+      },
+      "file": "page/index.html",
+      "icon": "page/icon.svg",
+      "service": {
+        "port": 3478,
+        "option": "port"
+      }
+    },
+    "options": {
+      "port": 3478
+    }
+  }
+}
