@@ -4,4 +4,6 @@ import { startServer } from "./lib/server.mjs";
 
 const port = Number(process.env.PORT || 3478);
 const info = await startServer({ port });
-console.log(`[gateway-admin] http://127.0.0.1:${info.port}/${info.reused ? "（复用了已在跑的服务）" : ""}`);
+console.log(
+  `[gateway-admin] http://127.0.0.1:${info.port}/${info.reused ? "（复用了已在跑的服务）" : ""}`,
+);

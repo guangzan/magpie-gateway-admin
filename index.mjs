@@ -62,7 +62,7 @@ export default {
     if (!listening) {
       await ensure(want).catch(() => null);
     } else if (listening.port !== want) {
-      // 用户在选项里改了端口：换到新端口，页面按 magpie.service / 选项跳转。
+      // 用户在选项里改了端口：换过去，页面按 magpie.service / 选项跳转。
       await listening.close().catch(() => {});
       listening = null;
       starting = null;

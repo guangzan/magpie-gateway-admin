@@ -5,7 +5,7 @@
 <h1 align="center">magpie 网关用户管理</h1>
 
 <p align="center">
-  给 <a href="https://usemagpie.ai">magpie</a> 的网关加上多用户管理：批量发 key、限额、模型权限和用量看板。
+  给 <a href="https://usemagpie.ai">magpie</a> 的网关加上多用户管理：批量发 key、限额、模型权限、用量看板。成员自己查用量走 magpie 网关自带的 <code>/me</code> 页，不需要额外部署。
 </p>
 
 <p align="center">
@@ -16,6 +16,10 @@
 <p align="center">
   <img alt="magpie 0.1.3078+" src="https://img.shields.io/badge/magpie-0.1.3078%2B-6b46c1">
   <img alt="Bun 1.1+" src="https://img.shields.io/badge/Bun-1.1%2B-000000?logo=bun&logoColor=white">
+</p>
+
+<p align="center">
+  <img src="./docs/banner.png" width="1012" height="637" alt="网关用户管理界面：用户与密钥列表，顶部是批量发 key / 导出 CSV / 搜索筛选，列表里有每把 key 的限额、调用次数和花费估算">
 </p>
 
 magpie 自带的 Gateway 页面是给单用户准备的：一把共享 key，改不了名、停不了用。这个插件补的是「把网关开给一群人」的那部分——每把 key 有自己的权限、限额和用量。
@@ -37,8 +41,9 @@ magpie 自带的 Gateway 页面是给单用户准备的：一把共享 key，改
 
 2. 打开侧边栏里的「网关用户管理」。
 3. 点「批量发 key」，设置名称前缀、有效期和权限；创建后复制或导出明文。
+4. 要让用户自己查用量，把**网关的 `/me` 页**发给他们：`http://<运行 magpie 的机器>:3425/me`（端口以 magpie 的设置为准）。他们输入自己的 key 就能看到额度、用量和客户端配置，见下面的「成员自助查用量」。这个地址在 magpie 的 Gateway → Gateway keys 里可以一键复制。
 
-第一次打开会启动插件自己的本地服务，默认地址是 `http://127.0.0.1:3478/`。
+第一次打开会启动插件自己的本地服务，默认地址是 `http://127.0.0.1:3478/`（只在本机，给管理员用）。
 
 ## 能做什么
 
@@ -66,6 +71,15 @@ magpie 自带的 Gateway 页面是给单用户准备的：一把共享 key，改
 
 > [!NOTE]
 > 花费按网关价格估算；未计价调用按 $0 计，不计入美元限额。统计区间以运行网关的机器时区为准。
+
+### 成员自助查用量
+
+成员不需要装任何东西：magpie 网关自带 key 页面，打开网关地址下的 `/me` 就行。
+
+- 用户在 `http://<运行 magpie 的机器>:3425/me` 输入自己的 key，看到的是这把 key 自己的名称、限额和进度、今日 / 7 天 / 30 天用量、最常用的模型，以及 Claude Code、Codex、OpenAI 兼容客户端的配置片段。页面支持简体中文、繁体中文、日语和德语。
+- key 只放在标签页的 `sessionStorage` 里，不下发 cookie，页面不接受被别的网页嵌入；数据接口是 `GET /v1/magpie/me`，未知、停用或写错的 key 一律 401，`?key=` 直接被拒（key 不会进地址栏或日志）。
+- 这是 magpie 自己的功能，从 0.1.2226 起就有；只要成员能调用网关（局域网共享或反向代理），就一定能打开它。这个插件不再单独提供用户端页面，避免维护第二套登录、会话和用量裁剪逻辑。
+- 如果确实需要**请求级明细**（逐条调用、失败原因、key 到期时间），现在的做法是把这部分上游到 magpie 的 key 页面，而不是在插件里再做一个页面。
 
 ### 模板
 
@@ -106,13 +120,15 @@ magpie plugin add /path/to/magpie-gateway-admin
 
 网关地址优先读 `MAGPIE_ADDR`，否则读 `settings.json` 里的 `port`，最后才回落到默认的 `3425`。
 
-### 端口和卸载
+### 端口
 
-端口被占用时可以在插件选项里改：
+管理服务的端口被占用时可以在插件选项里改：
 
 ```bash
 magpie plugin options magpie-gateway-admin '{"port": 3479}'
 ```
+
+这个服务只监听 `127.0.0.1`，不给局域网开放：插件页面本来就在本机的沙箱 iframe 里，而成员入口是 magpie 网关自己的 `/me`，不需要第二个对外端口。
 
 卸载：
 
@@ -130,21 +146,24 @@ magpie 的插件页面跑在 `sandbox="allow-scripts"` 的 iframe 里，CSP 是 
 magpie 窗口
 └── iframe（sandbox=allow-scripts，只能加载自己的文件）
     └── location.replace → http://127.0.0.1:3478/
-        ├── ui/            界面（React + Ant Design，构建产物在 ui/dist）
-        └── lib/server.mjs 本地接口
-            ├── magpie gateway-key …   发 key / 轮换 / 删 key / 改账号 / 清零已用量
-            ├── <配置目录>/caller-keys.json  限额、模型、账号、到期
-            └── 网关（settings.json 的 port，默认 127.0.0.1:3425）  限额余量、用量、请求明细、模型目录
+        ├── ui/              管理界面
+        ├── lib/server.mjs   本地接口
+        ├── magpie gateway-key …   发 key / 轮换 / 删 key / 改账号 / 清零已用量
+        ├── <配置目录>/caller-keys.json  限额、模型、账号、到期
+        └── 网关（settings.json 的 port，默认 127.0.0.1:3425）  限额余量、用量、请求明细、模型目录
+
+成员侧不经过这个服务：他们打开的是网关自己的 http://<网关地址>/me。
 ```
 
 插件读取网关的只读接口（`/v1/magpie/limit`、`/v1/magpie/usage`、`/v1/magpie/usage/requests`、`/v1/models`、`/v1/magpie/quotas`），写入 `caller-keys.json`。写入和 magpie 用同一个 `caller-keys.json.lock`（`flock`；Windows 退化成插件自己的锁文件），采用「临时文件 + rename」原子写，权限 `0600`，改之前留一份备份。
 
 ## 安全
 
-- **只监听本机**：服务只绑定 `127.0.0.1`，不对外网开放；请求的 `Host` 必须是 `127.0.0.1` / `localhost` / `[::1]`，否则直接 421，防止 DNS rebinding。
+- **只监听本机**：管理服务固定绑定 `127.0.0.1`，不对外网开放；请求的 `Host` 必须是 `127.0.0.1` / `localhost` / `[::1]`，否则直接 421，防止 DNS rebinding。管理接口还会检查连接来源的 IP，只接受回环地址——别的机器即使伪造 `Host: 127.0.0.1` 也进不来。
 - **每次启动换 token**：服务启动时生成随机 token，内联进 HTML，接口用 `x-magpie-admin-token` 校验（`timingSafeEqual`）。别的网页拿不到这个 token，也就调不动接口。
-- **同源检查**：非本机 `Origin` 一律 403；CORS 只把请求里的本机 `Origin` 原样还回去，不做通配反射。
-- **严格 CSP**：页面使用 `default-src 'none'`、`script-src 'nonce-…'`、`connect-src 'self'`，并显式放行 `http://127.0.0.1:<port>` / `localhost` / `[::1]` 这几个本机源。这里不能加 `X-Frame-Options` / `frame-ancestors 'none'`：这一页本来就跑在 magpie 的 sandbox iframe 里，禁框会把整个插件挡在外面；防跨站靠 Host、Origin 校验和每次启动的 token。同理也不发 `Cross-Origin-Resource-Policy: same-origin`，否则 opaque 源的 iframe 加载不了自己的构建产物。
+- **同源检查**：非本机 `Origin` 一律 403；CORS 只把请求里的本机 `Origin` 原样还回去，不做通配反射；`Origin: null` 只留给 magpie 自己的沙箱页面。
+- **严格 CSP**：管理页使用 `default-src 'none'`、`script-src 'nonce-…'`、`connect-src 'self'`，并显式放行 `http://127.0.0.1:<port>` / `localhost` / `[::1]` 这几个本机源。这里不能加 `X-Frame-Options` / `frame-ancestors 'none'`：这一页本来就跑在 magpie 的 sandbox iframe 里，禁框会把整个插件挡在外面；防跨站靠 Host、Origin 校验和每次启动的 token。同理也不发 `Cross-Origin-Resource-Policy: same-origin`，否则 opaque 源的 iframe 加载不了自己的构建产物。
+- **成员侧的安全由 magpie 负责**：`/me` 的登录、会话、数据裁剪都是网关自己的实现（`keypage.html` + `GET /v1/magpie/me`），这个插件不接触成员的 key 和会话。
 - **明文按需取**：列表接口只给掩码（末 4–6 位）；点「复制」时向本地服务单独取一次明文，只有拿着页面 token 的管理页调得动。轮换后会弹一次新明文。
 - **文件权限**：导出的 CSV 和备份都是 `0600`，和 `caller-keys.json` 同目录权限。交付用的密钥 CSV 是明文，分发完请手动删除——它不会自动过期。
 
@@ -166,6 +185,8 @@ magpie 窗口
 - 默认的共享 key（LAN key）不能在插件里改名、停用、改到期、设只读、删除或轮换——那是 magpie 自己 Gateway 页面管的。改到期同样能让 key 失效，所以和「停用」一样被拦住。插件里会明确拒绝并提示，列表里对应的操作也会禁用。
 - 端口被另一个管理台占着时，只有在配置目录和版本都一致时才复用；不一致会拒绝启动并给换端口的命令，避免页面管到另一份 `caller-keys.json`。
 - 账号绑定走 `magpie gateway-key accounts`，由 magpie 自己校验 provider 是否存在。magpie 0.1.3078 的 `gateway-key` 没有 `mcp` 子命令，所以插件不提供 per-key 的 MCP 绑定。
+- 插件假定 magpie 网关和管理服务跑在同一台机器上：服务端以 loopback 身份读取用量、限额和模型目录。`MAGPIE_ADDR` 指向远端网关时，远端会把无 key 的请求拒掉，列表里的用量和限额会取不到。
+- 成员自助入口依赖 magpie 自带的 `/me`（0.1.2226+）。需要请求级明细时，请上游到 magpie 的 key 页面，而不是在这里再加一个用户端。
 - 导出落在运行 magpie 的那台机器上。沙箱页面不能直接下载，这是取舍。
 
 ## 开发
@@ -200,7 +221,7 @@ bun run serve     # 不起 magpie，直接跑服务，浏览器开 http://127.0.
 ```text
 index.mjs          插件宿主入口（import 时起服务）
 page/              在 magpie 里跑的那一页，只负责跳转
-ui/src/            界面源码（App / views / modals / store / api / types）
+ui/src/            管理界面源码（App / views / modals / store / api / types）
 ui/dist/           vite 构建产物，服务直接托管
 ui/vite.config.ts  base "./"、target safari17、dev 代理
 lib/server.mjs     本地 HTTP 接口（含 Origin/Host 校验、批量事务回滚）

@@ -96,6 +96,28 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "templates", label: "模板" },
 ];
 
+// 成员入口：magpie 网关自带 key 页面，团队用自己的 key 登录即可，这里只做说明。
+function MemberPanel() {
+  return (
+    <div style={{ maxWidth: 380, fontSize: 12, lineHeight: 1.9 }}>
+      <div style={{ marginBottom: 4 }}>
+        团队成员的入口是<Text strong>网关地址下的 /me</Text>，例如
+        <Text code>http://&lt;运行 magpie 的机器&gt;:3425/me</Text>。
+      </div>
+      <div>
+        他们输入自己的 key 后可以看到额度、今日/7 天/30 天用量、可调用的模型，以及 Claude Code、Codex
+        等客户端的配置片段。地址可以在 magpie 的 Gateway → Gateway keys 里复制（共享到局域网或配好
+        MAGPIE_PUBLIC_URL 后显示）。
+      </div>
+      <div style={{ marginTop: 6 }}>
+        <Text type="secondary">
+          这个插件只给管理员用：发 key、限额和用量看板都在本机管理页里。
+        </Text>
+      </div>
+    </div>
+  );
+}
+
 export default function Shell() {
   const { token } = theme.useToken();
   const { message } = AntApp.useApp();
@@ -219,6 +241,9 @@ export default function Shell() {
       >
         {health ? (health.writable ? "密钥文件可写" : "密钥文件只读") : "文件状态未知"}
       </Tag>
+    </Popover>,
+    <Popover key="member" title="成员入口" content={<MemberPanel />} trigger="click">
+      <Tag style={{ margin: 0, cursor: "pointer" }}>成员入口 · /me</Tag>
     </Popover>,
   ];
 

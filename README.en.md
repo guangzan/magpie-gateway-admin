@@ -5,7 +5,7 @@
 <h1 align="center">magpie Gateway Admin</h1>
 
 <p align="center">
-  Multi-user management for the <a href="https://usemagpie.ai">magpie</a> gateway: batch key issuance, limits, model permissions, and a usage dashboard.
+  Multi-user management for the <a href="https://usemagpie.ai">magpie</a> gateway: batch key issuance, limits, model permissions, and a usage dashboard. Members check their own usage on magpie's built-in <code>/me</code> page—nothing extra to deploy.
 </p>
 
 <p align="center">
@@ -16,6 +16,10 @@
 <p align="center">
   <img alt="magpie 0.1.3078+" src="https://img.shields.io/badge/magpie-0.1.3078%2B-6b46c1">
   <img alt="Bun 1.1+" src="https://img.shields.io/badge/Bun-1.1%2B-000000?logo=bun&logoColor=white">
+</p>
+
+<p align="center">
+  <img src="./docs/banner.png" width="1012" height="637" alt="Gateway Admin interface: the user and key list with bulk key issuance, CSV export, search, and per-key limits, call counts, and estimated spend">
 </p>
 
 magpie's built-in Gateway page is designed for a single user: one shared key that cannot be renamed or disabled. This plugin covers the other part—opening the gateway to a group of people, with per-key permissions, limits, and usage.
@@ -40,8 +44,9 @@ magpie's built-in Gateway page is designed for a single user: one shared key tha
 
 2. Open **Gateway Admin** in the sidebar.
 3. Click **Batch issue keys**, set a name prefix, expiry, and permissions, then copy or export the plaintext keys.
+4. To let users check their own usage, send them the gateway's **`/me` page**: `http://<machine running magpie>:3425/me` (use your gateway's actual port). Entering their key shows limits, usage, and client setup. See **Member Self-Service** below. magpie's **Gateway → Gateway keys** page has a Copy button for this address.
 
-The first open starts the plugin's local service at `http://127.0.0.1:3478/`.
+The first open starts the plugin's local service at `http://127.0.0.1:3478/` (loopback only, for the admin).
 
 ## What It Does
 
@@ -69,6 +74,15 @@ The first open starts the plugin's local service at `http://127.0.0.1:3478/`.
 
 > [!NOTE]
 > Cost is estimated from gateway pricing. Unpriced calls count as $0 and do not consume USD limits. Periods follow the timezone of the machine running the gateway.
+
+### Member Self-Service
+
+Members install nothing: magpie's gateway ships a key page at `/me`.
+
+- At `http://<machine running magpie>:3425/me` a member enters their key and sees that key's name, limits and progress, usage over today / 7 / 30 days, its most-used models, and setup snippets for Claude Code, Codex, and OpenAI-compatible clients. The page is available in Simplified Chinese, Traditional Chinese, Japanese, and German.
+- The key is kept in the tab's `sessionStorage` only; no cookie is set, and the page refuses to be framed. Its data endpoint is `GET /v1/magpie/me`; unknown, disabled, or wrong keys get a 401, and `?key=` is refused so a key never lands in an address bar or a log.
+- This is magpie's own feature, available since 0.1.2226. If members can call the gateway (LAN sharing or a reverse proxy), they can open it. This plugin no longer ships a portal of its own, so there is no second login, session, and usage-scoping implementation to maintain.
+- If you truly need **per-request detail** (individual calls, failure reasons, key expiry), the plan is to upstream that into magpie's key page rather than build another page here.
 
 ### Templates
 
@@ -109,13 +123,15 @@ The plugin resolves the config directory using magpie's own rules, so it reads a
 
 The gateway address comes from `MAGPIE_ADDR`; otherwise the plugin reads `port` from `settings.json`, then falls back to `3425`.
 
-### Port and Uninstall
+### Port
 
 If the default port is occupied, change it in the plugin options:
 
 ```bash
 magpie plugin options magpie-gateway-admin '{"port": 3479}'
 ```
+
+This service always listens on `127.0.0.1` and is not exposed to the LAN: the plugin page already runs in a loopback sandboxed iframe, and the member entry point is the gateway's own `/me`, so no second public port is needed.
 
 Uninstall:
 
@@ -133,21 +149,24 @@ So the page does exactly one thing—it navigates to a local HTTP service starte
 magpie window
 └── iframe (sandbox=allow-scripts, can only load its own files)
     └── location.replace → http://127.0.0.1:3478/
-        ├── ui/            UI (React + Ant Design, built into ui/dist)
-        └── lib/server.mjs local API
-            ├── magpie gateway-key …   issue / rotate / remove keys, set accounts, reset usage
-            ├── <config-dir>/caller-keys.json  limits, models, accounts, expiry
-            └── gateway (settings.json port, default 127.0.0.1:3425)  limits, usage, requests, model catalog
+        ├── ui/              admin UI
+        ├── lib/server.mjs   local API
+        ├── magpie gateway-key …   issue / rotate / remove keys, set accounts, reset usage
+        ├── <config-dir>/caller-keys.json  limits, models, accounts, expiry
+        └── gateway (settings.json port, default 127.0.0.1:3425)  limits, usage, requests, model catalog
+
+Members do not go through this service: they open the gateway's own http://<gateway>/me.
 ```
 
 The plugin reads gateway endpoints (`/v1/magpie/limit`, `/v1/magpie/usage`, `/v1/magpie/usage/requests`, `/v1/models`, `/v1/magpie/quotas`) and writes `caller-keys.json`. It uses the same `caller-keys.json.lock` as magpie (`flock`; Windows falls back to the plugin's own lock file), performs atomic writes via temporary file + rename, keeps permissions at `0600`, and takes a backup before each write.
 
 ## Security
 
-- **Loopback only**: the server binds to `127.0.0.1`. Requests must use a `Host` of `127.0.0.1`, `localhost`, or `[::1]`—anything else gets a 421, which also blocks DNS rebinding.
+- **Loopback only**: the admin service always binds `127.0.0.1`. Requests must use a `Host` of `127.0.0.1`, `localhost`, or `[::1]`—anything else gets a 421, which also blocks DNS rebinding. The admin API additionally checks the connection's source address and accepts loopback only—another machine cannot get in even by forging `Host: 127.0.0.1`.
 - **Per-start token**: each start generates a random token, inlines it into the HTML, and requires it in `x-magpie-admin-token` (compared with `timingSafeEqual`). Other web pages cannot obtain the token and therefore cannot call the API.
-- **Origin checks**: non-local `Origin` values get a 403. CORS reflects only a local origin and never uses a wildcard.
-- **Strict CSP**: `default-src 'none'`, `script-src 'nonce-…'`, and `connect-src 'self'`, with explicit allowances for `http://127.0.0.1:<port>` / `localhost` / `[::1]`. The page cannot send `X-Frame-Options` / `frame-ancestors 'none'`: it intentionally runs inside magpie's sandbox iframe, and framing protection would break the entire plugin. Cross-site protection comes from Host and Origin checks plus the per-start token. For the same reason the server does not send `Cross-Origin-Resource-Policy: same-origin`; an opaque-origin iframe would be blocked from loading its own assets.
+- **Origin checks**: non-local `Origin` values get a 403. CORS reflects only a local origin and never uses a wildcard; `Origin: null` is accepted only for magpie's own sandboxed page.
+- **Strict CSP**: the admin page uses `default-src 'none'`, `script-src 'nonce-…'`, and `connect-src 'self'`, with explicit allowances for `http://127.0.0.1:<port>` / `localhost` / `[::1]`. It cannot send `X-Frame-Options` / `frame-ancestors 'none'`: it intentionally runs inside magpie's sandbox iframe, and framing protection would break the entire plugin. Cross-site protection comes from Host and Origin checks plus the per-start token. For the same reason the server does not send `Cross-Origin-Resource-Policy: same-origin`; an opaque-origin iframe would be blocked from loading its own assets.
+- **Member-side security is magpie's**: the `/me` login, session, and data scoping are the gateway's own implementation (`keypage.html` and `GET /v1/magpie/me`). This plugin never touches a member's key or session.
 - **Secrets on demand**: list responses contain only masked keys (last 4–6 characters). Clicking **Copy** fetches the plaintext once from the local service, and only a page holding the admin token can do that. Rotation shows the new secret once more.
 - **File permissions**: exported CSVs and backups are `0600`, matching `caller-keys.json`. Delivery CSVs contain plaintext keys—delete them after distribution; they do not expire automatically.
 
@@ -169,6 +188,8 @@ These are not bugs; they are consequences of magpie's iframe policy. The plugin 
 - The default shared key (LAN key) cannot be renamed, disabled, re-expired, made read-only, deleted, or rotated here—it belongs to magpie's own Gateway page. Changing its expiry would effectively disable it, so that is blocked too. The plugin rejects these actions explicitly and disables the corresponding row actions.
 - If another admin instance occupies the port, the plugin only reuses it when both the config directory and version match. Otherwise it refuses to start and prints a command for changing the port, so the page cannot silently manage a different `caller-keys.json`.
 - Account binding goes through `magpie gateway-key accounts`, and magpie validates the provider. magpie 0.1.3078's `gateway-key` has no `mcp` subcommand, so the plugin does not offer per-key MCP binding.
+- The plugin assumes magpie and the admin service run on the same machine: the server reads usage, limits, and the model catalog as loopback. If `MAGPIE_ADDR` points at a remote gateway, that side rejects unauthenticated requests and the lists show no usage or limits.
+- The member entry point relies on magpie's built-in `/me` (0.1.2226+). If you need per-request detail, upstream it into magpie's key page rather than adding another portal here.
 - Exports are written on the machine running magpie. The sandbox page cannot download files directly; this is a deliberate tradeoff.
 
 ## Development
@@ -203,7 +224,7 @@ The UI uses React 19, Ant Design 6, and TypeScript, with zustand for state and v
 ```text
 index.mjs          plugin host entry (starts the service on import)
 page/              the page loaded inside magpie; it only navigates
-ui/src/            UI source (App / views / modals / store / api / types)
+ui/src/            admin UI source (App / views / modals / store / api / types)
 ui/dist/           vite build output, served directly
 ui/vite.config.ts  base "./", target safari17, dev proxy
 lib/server.mjs     local HTTP API (Origin/Host checks, batch transaction rollback)
