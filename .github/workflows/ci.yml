@@ -46,58 +46,63 @@ jobs:
             exit 1
           fi
 
-  publish:
-    needs: check
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 12.15.0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.4
-
-      # Trusted publishing needs npm >= 11.5.1; Node 24 ships an 11.x build,
-      # but pin it forward so an older image cannot silently break publishing.
-      - run: npm install -g npm@11
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: verify tag matches package version
-        run: |
-          version="$(node -p "require('./package.json').version")"
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "tag $GITHUB_REF_NAME does not match package.json version $version" >&2
-            exit 1
-          fi
-
-      # The first release is published by hand, before a trusted publisher can
-      # exist. Later tag pushes must not fail just because that version is up.
-      - name: check whether this version is already published
-        id: published
-        run: |
-          version="$(node -p "require('./package.json').version")"
-          if npm view "magpie-gateway-admin@$version" version >/dev/null 2>&1; then
-            echo "magpie-gateway-admin@$version is already on npm; skipping publish"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      # Trusted publishing authenticates through GitHub Actions OIDC, so the
-      # workflow needs id-token: write and no NPM_TOKEN secret.
-      - name: publish
-        if: steps.published.outputs.skip != 'true'
-        run: npm publish --provenance --access public
+  # 暂停：npm 账号处于 72 小时只读冻结（2026-11-10 11:33 + 72h ≈ 11-13 11:34
+  # 自动解除），此时 tag 一推 publish 必然 403、CI 就要红。1.0.0 首发本来也
+  # 只能手动发布（Trusted Publisher 只能给已存在的包配置）。等 11-13 解除后
+  # 取消下面整段的注释再推 tag，CI 会看到 npm 上已有 1.0.0 而跳过发布。
+  #
+  # publish:
+  #   needs: check
+  #   if: startsWith(github.ref, 'refs/tags/v')
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: read
+  #     id-token: write
+  #   steps:
+  #     - uses: actions/checkout@v5
+  #
+  #     - uses: pnpm/action-setup@v4
+  #       with:
+  #         version: 12.15.0
+  #
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 24
+  #         cache: pnpm
+  #
+  #     - uses: oven-sh/setup-bun@v2
+  #       with:
+  #         bun-version: 1.4.4
+  #
+  #     # Trusted publishing needs npm >= 11.5.1; Node 24 ships an 11.x build,
+  #     # but pin it forward so an older image cannot silently break publishing.
+  #     - run: npm install -g npm@11
+  #
+  #     - run: pnpm install --frozen-lockfile
+  #
+  #     - name: verify tag matches package version
+  #       run: |
+  #         version="$(node -p "require('./package.json').version")"
+  #         if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+  #           echo "tag $GITHUB_REF_NAME does not match package.json version $version" >&2
+  #           exit 1
+  #         fi
+  #
+  #     # The first release is published by hand, before a trusted publisher can
+  #     # exist. Later tag pushes must not fail just because that version is up.
+  #     - name: check whether this version is already published
+  #       id: published
+  #       run: |
+  #         version="$(node -p "require('./package.json').version")"
+  #         if npm view "magpie-gateway-admin@$version" version >/dev/null 2>&1; then
+  #           echo "magpie-gateway-admin@$version is already on npm; skipping publish"
+  #           echo "skip=true" >> "$GITHUB_OUTPUT"
+  #         else
+  #           echo "skip=false" >> "$GITHUB_OUTPUT"
+  #         fi
+  #
+  #     # Trusted publishing authenticates through GitHub Actions OIDC, so the
+  #     # workflow needs id-token: write and no NPM_TOKEN secret.
+  #     - name: publish
+  #       if: steps.published.outputs.skip != 'true'
+  #       run: npm publish --provenance --access public
