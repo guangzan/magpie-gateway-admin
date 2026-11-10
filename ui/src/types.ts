@@ -8,7 +8,6 @@ export interface Limit {
   cost: number;
   days?: number;
   hours?: number;
-  models?: string[];
   since?: string;
   cacheReads?: boolean;
 }
@@ -18,16 +17,45 @@ export interface LimitRow {
   n: number;
   tokens: number;
   cost: number;
-  models: string;
+  // 编辑已有 key 时原样带回，窗口起点就不会被保存动作重置。
+  since?: string;
+  cacheReads?: boolean;
 }
 
 export interface KeyUsage {
   calls: number;
   errors: number;
   cost: number;
+  // 网关不知道价格的调用：按 $0 计，不单独提示会让「花费」看起来偏低。
+  unpriced?: number;
   input: number;
   output: number;
   cache_read: number;
+}
+
+// 网关 GET /v1/magpie/limit 里的一条限额窗口（budget.Status）。
+export interface BudgetStatus {
+  period: LimitPeriod;
+  days?: number;
+  hours?: number;
+  start?: string;
+  reset?: string;
+  calls?: number;
+  tokens?: number;
+  cost?: number;
+  unpriced?: number;
+  tokenLimit?: number;
+  costLimit?: number;
+  tokensLeft?: number;
+  costLeft?: number;
+  spent?: boolean;
+}
+
+export interface BudgetInfo {
+  limited: boolean;
+  limits: BudgetStatus[];
+  // 网关自己判定「真正卡住这把 key」的那一条。
+  binding?: BudgetStatus | null;
 }
 
 export interface KeyRow {
@@ -43,21 +71,21 @@ export interface KeyRow {
   issues: boolean;
   issuer: string;
   expires: string;
-  maxConcurrency: number;
   models: string[];
   accounts: string[];
   limits: Limit[];
   usage?: KeyUsage;
+  budget?: BudgetInfo | null;
 }
 
 export interface Template {
   models: string[];
   limits: Limit[];
-  maxConcurrency: number;
   expiresInDays?: number;
   readOnly: boolean;
   quotas: boolean;
   issues?: boolean;
+  accounts?: string[];
 }
 
 export interface TemplateItem {
@@ -83,9 +111,13 @@ export interface Health {
   app?: string;
   version?: string;
   configDir?: string;
+  configOverride?: string;
   keysFile?: string;
   keysReadable?: boolean;
+  keysCount?: number;
+  keysError?: string;
   writable?: boolean;
+  backupsDir?: string;
   cli?: { ok: boolean; path?: string };
   gateway?: { ok: boolean; models?: number; error?: string };
 }
@@ -100,9 +132,11 @@ export interface UsageSummary {
   calls?: number;
   errors?: number;
   cost?: number;
+  unpriced?: number;
   input?: number;
   output?: number;
   cache_read?: number;
+  cache_write?: number;
 }
 
 export interface UsageGroup extends UsageSummary {
@@ -137,7 +171,6 @@ export interface KeyPayload {
   models?: string;
   accounts?: string;
   limits?: Limit[];
-  maxConcurrency?: number;
   readOnly?: boolean;
   quotas?: boolean;
   issues?: boolean;
@@ -151,9 +184,11 @@ export interface BatchPayload {
   off: boolean;
   template: {
     models: string;
+    accounts?: string;
     limits: Limit[];
-    maxConcurrency: number;
     expiresInDays?: number;
     readOnly: boolean;
+    quotas?: boolean;
+    issues?: boolean;
   };
 }

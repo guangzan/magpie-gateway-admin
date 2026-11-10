@@ -1,11 +1,29 @@
+/* 页面被桥接进 magpie 时用窗口的 --magpie-* 变量；单独打开时回落到
+   magpie 的两套默认调色板，免得深色主题下先闪一张白纸。 */
+:root {
+  --mpa-bg: var(--magpie-bg, #f4f4f6);
+  --mpa-fg: var(--magpie-fg, #1c1c21);
+}
+
+:root[data-theme="dark"] {
+  --mpa-bg: var(--magpie-bg, #1a1a1e);
+  --mpa-fg: var(--magpie-fg, #ededf1);
+}
+
 html,
 body,
 #root {
   height: 100%;
 }
 
+html {
+  background: var(--mpa-bg);
+}
+
 body {
   margin: 0;
+  background: var(--mpa-bg);
+  color: var(--mpa-fg);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -22,6 +40,16 @@ body {
 }
 *::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* antd 在 .ant-table 上写了 scrollbar-color，WebKit 认出这个属性就改画系统
+   浮层滚动条；而 macOS「滚动时显示」的浮层条只在真正滚动时出现，鼠标悬停
+   也不会浮出，表格右侧被裁掉的列因此毫无提示。这里让表格回到
+   ::-webkit-scrollbar 的绘制路径，和页面其他滚动区用同一套细滚动条。 */
+.ant-table,
+.ant-table-content,
+.ant-table-body {
+  scrollbar-color: auto;
 }
 
 .mono {

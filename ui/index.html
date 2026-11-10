@@ -4,7 +4,22 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>网关用户管理</title>
-    <script nonce="%%NONCE%%">window.__MPA_TOKEN__ = "%%TOKEN%%";</script>
+    <script nonce="%%NONCE%%">
+      window.__MPA_TOKEN__ = "%%TOKEN%%";
+      // page/boot.js 把 magpie 的当前主题放进 hash：样式表加载前先定下
+      // 深浅，避免深色主题下闪一帧白底。之后的切换走 hostTheme.ts。
+      (() => {
+        try {
+          const mode = new URLSearchParams(location.hash.slice(1)).get("t");
+          if (mode === "dark" || mode === "light") {
+            document.documentElement.dataset.theme = mode;
+            document.documentElement.style.colorScheme = mode;
+          }
+        } catch {
+          // hash 不合法就交给 hostTheme.ts 判断
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

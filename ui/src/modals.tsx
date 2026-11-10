@@ -12,6 +12,7 @@ import {
   Select,
   Space,
   Table,
+  Tooltip,
   Typography,
 } from "antd";
 import type { TableProps } from "antd";
@@ -19,7 +20,7 @@ import dayjs from "dayjs";
 
 import LimitEditor from "./components/LimitEditor";
 import ModelField from "./components/ModelField";
-import { readLimits, toLimitRows } from "./format";
+import { blankLimits, budgetWindow, fmtCost, fmtDate, fmtNum, readLimits, toLimitRows } from "./format";
 import type {
   BatchPayload,
   CatalogModel,
@@ -67,7 +68,6 @@ function templateOptions(templates: TemplateItem[]) {
 interface CommonProps {
   providers: string[];
   groups: CatalogModel[];
-  onGroup(id: string): void;
 }
 
 // ---------- 新建单个 key ----------
@@ -83,10 +83,11 @@ interface KeyForm {
   name: string;
   expires: string;
   models: string;
+  accounts: string;
   limits: LimitRow[];
-  concurrency: number;
   readOnly: boolean;
   quotas: boolean;
+  issues: boolean;
   off: boolean;
   templateId: string;
 }
@@ -95,15 +96,16 @@ const blankKey = (): KeyForm => ({
   name: "",
   expires: "",
   models: "",
-  limits: [],
-  concurrency: 0,
+  accounts: "",
+  limits: blankLimits(),
   readOnly: false,
   quotas: false,
+  issues: false,
   off: false,
   templateId: "",
 });
 
-export function KeyModal({ open, onClose, onSubmit, templates, providers, groups, onGroup }: KeyModalProps) {
+export function KeyModal({ open, onClose, onSubmit, templates, providers, groups }: KeyModalProps) {
   const [form, setForm] = React.useState<KeyForm>(blankKey);
   const [err, setErr] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -125,10 +127,14 @@ export function KeyModal({ open, onClose, onSubmit, templates, providers, groups
       ...(tpl
         ? {
             models: (tpl.models || []).join(", "),
+            accounts: (tpl.accounts || []).join(", "),
             limits: toLimitRows(tpl.limits),
-            concurrency: tpl.maxConcurrency || 0,
             readOnly: !!tpl.readOnly,
             quotas: !!tpl.quotas,
+            issues: !!tpl.issues,
+            expires: tpl.expiresInDays
+              ? dayjs().add(tpl.expiresInDays, "day").format("YYYY-MM-DD")
+              : "",
           }
         : {}),
     });
@@ -143,10 +149,11 @@ export function KeyModal({ open, onClose, onSubmit, templates, providers, groups
         name: form.name,
         expires: expiresBody(form.expires),
         models: form.models,
+        accounts: form.accounts,
         limits: readLimits(form.limits),
-        maxConcurrency: Number(form.concurrency || 0),
         readOnly: form.readOnly,
         quotas: form.quotas,
+        issues: form.issues,
         off: form.off,
       });
     } catch (e) {
@@ -167,7 +174,7 @@ export function KeyModal({ open, onClose, onSubmit, templates, providers, groups
         <Space>
           <Button onClick={onClose}>取消</Button>
           <Button type="primary" loading={busy} onClick={submit}>
-            保存
+            创建
           </Button>
         </Space>
       }
@@ -203,48 +210,50 @@ export function KeyModal({ open, onClose, onSubmit, templates, providers, groups
       </Row>
 
       <div style={{ marginTop: 14 }}>
-        <Label hint="（provider/* 表示整个厂商）">模型</Label>
+        <Text strong>权限配置</Text>
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        <Label hint="（provider/* 表示整个厂商）">能用模型</Label>
         <ModelField
           value={form.models}
           onChange={(models) => set({ models })}
           providers={providers}
           groups={groups}
-          onGroup={onGroup}
         />
       </div>
 
       <div style={{ marginTop: 14 }}>
-        <Label hint="（留空表示不限）">限额</Label>
+        <Label hint="（逗号分隔；留空 = 不限）">上游账号</Label>
+        <Input
+          value={form.accounts}
+          placeholder="openai/acct_xxx, anthropic/…"
+          onChange={(e) => set({ accounts: e.target.value })}
+        />
+      </div>
+
+      <div style={{ marginTop: 14 }}>
+        <Label hint="（tokens 和美元都填 0 表示这条不限）">限额</Label>
         <LimitEditor rows={form.limits} onChange={(limits) => set({ limits })} />
       </div>
 
-      <Row gutter={12} style={{ marginTop: 14 }}>
-        <Col span={8}>
-          <Label>并发上限</Label>
-          <InputNumber
-            style={{ width: "100%" }}
-            min={0}
-            max={1000}
-            controls={false}
-            placeholder="0 = 不限"
-            value={form.concurrency || null}
-            onChange={(concurrency) => set({ concurrency: Number(concurrency ?? 0) })}
-          />
-        </Col>
-        <Col span={16} style={{ display: "flex", alignItems: "flex-end", paddingBottom: 4 }}>
-          <Space size={16} wrap>
-            <Checkbox checked={form.readOnly} onChange={(e) => set({ readOnly: e.target.checked })}>
-              只读
-            </Checkbox>
-            <Checkbox checked={form.quotas} onChange={(e) => set({ quotas: e.target.checked })}>
-              允许读额度卡片
-            </Checkbox>
-            <Checkbox checked={form.off} onChange={(e) => set({ off: e.target.checked })}>
-              先停用
-            </Checkbox>
-          </Space>
-        </Col>
-      </Row>
+      <Space size={16} wrap style={{ marginTop: 14 }}>
+        <Tooltip title="只读 key 只能查用量和余额，不能调用任何模型或写接口。">
+          <Checkbox checked={form.readOnly} onChange={(e) => set({ readOnly: e.target.checked })}>
+            只读
+          </Checkbox>
+        </Tooltip>
+        <Checkbox checked={form.quotas} onChange={(e) => set({ quotas: e.target.checked })}>
+          允许查看上游账号余额
+        </Checkbox>
+        <Checkbox checked={form.issues} onChange={(e) => set({ issues: e.target.checked })}>
+          允许签发子 key
+        </Checkbox>
+        <Checkbox checked={form.off} onChange={(e) => set({ off: e.target.checked })}>
+          先停用
+        </Checkbox>
+      </Space>
+
       <Err text={err} />
     </Modal>
   );
@@ -255,6 +264,7 @@ export function KeyModal({ open, onClose, onSubmit, templates, providers, groups
 interface BatchModalProps extends CommonProps {
   open: boolean;
   templates: TemplateItem[];
+  initialTemplateId?: string | null;
   onClose(): void;
   onSubmit(body: BatchPayload): Promise<void>;
 }
@@ -264,10 +274,12 @@ interface BatchForm {
   prefix: string;
   start: number;
   models: string;
+  accounts: string;
   limits: LimitRow[];
-  concurrency: number;
   days: number;
   readOnly: boolean;
+  quotas: boolean;
+  issues: boolean;
   off: boolean;
   templateId: string;
 }
@@ -277,40 +289,75 @@ const blankBatch = (): BatchForm => ({
   prefix: "",
   start: 1,
   models: "",
-  limits: [],
-  concurrency: 0,
+  accounts: "",
+  limits: blankLimits(),
   days: 0,
   readOnly: false,
+  quotas: false,
+  issues: false,
   off: false,
   templateId: "",
 });
 
-export function BatchModal({ open, onClose, onSubmit, templates, providers, groups, onGroup }: BatchModalProps) {
+export function BatchModal({
+  open,
+  onClose,
+  onSubmit,
+  templates,
+  providers,
+  groups,
+  initialTemplateId,
+}: BatchModalProps) {
   const [form, setForm] = React.useState<BatchForm>(blankBatch);
   const [err, setErr] = React.useState("");
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
-    if (open) {
+    if (!open) return;
+    // 从模板页点「用这个模板发 key」进来时，直接把模板填好。
+    const picked = initialTemplateId
+      ? templates.find((t) => t.id === initialTemplateId)?.template
+      : null;
+    if (!picked) {
       setForm(blankBatch());
-      setErr("");
-      setBusy(false);
+    } else {
+      setForm({
+        ...blankBatch(),
+        templateId: initialTemplateId || "",
+        models: (picked.models || []).join(", "),
+        accounts: (picked.accounts || []).join(", "),
+        limits: toLimitRows(picked.limits),
+        days: picked.expiresInDays || 0,
+        readOnly: !!picked.readOnly,
+        quotas: !!picked.quotas,
+        issues: !!picked.issues,
+      });
     }
-  }, [open]);
+    setErr("");
+    setBusy(false);
+  }, [open, initialTemplateId, templates]);
 
   const set = (patch: Partial<BatchForm>) => setForm((f) => ({ ...f, ...patch }));
 
   const pickTemplate = (id: string) => {
+    if (!id) {
+      // 选回「不用模板」要把模板带进来的权限配置清掉，否则会以为没套模板、
+      // 实际仍按上一份模板发。
+      setForm((f) => ({ ...blankBatch(), count: f.count, prefix: f.prefix, start: f.start }));
+      return;
+    }
     const tpl = templates.find((x) => x.id === id)?.template;
     set({
       templateId: id,
       ...(tpl
         ? {
             models: (tpl.models || []).join(", "),
+            accounts: (tpl.accounts || []).join(", "),
             limits: toLimitRows(tpl.limits),
-            concurrency: tpl.maxConcurrency || 0,
             days: tpl.expiresInDays || 0,
             readOnly: !!tpl.readOnly,
+            quotas: !!tpl.quotas,
+            issues: !!tpl.issues,
           }
         : {}),
     });
@@ -328,10 +375,12 @@ export function BatchModal({ open, onClose, onSubmit, templates, providers, grou
         off: form.off,
         template: {
           models: form.models,
+          accounts: form.accounts,
           limits: readLimits(form.limits),
-          maxConcurrency: Number(form.concurrency || 0),
           expiresInDays: form.days ? Number(form.days) : undefined,
           readOnly: form.readOnly,
+          quotas: form.quotas,
+          issues: form.issues,
         },
       });
     } catch (e) {
@@ -400,35 +449,35 @@ export function BatchModal({ open, onClose, onSubmit, templates, providers, grou
       </Row>
 
       <div style={{ marginTop: 14 }}>
-        <Label>模型</Label>
+        <Text strong>权限配置</Text>
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        <Label>能用模型</Label>
         <ModelField
           value={form.models}
           onChange={(models) => set({ models })}
           providers={providers}
           groups={groups}
-          onGroup={onGroup}
         />
       </div>
 
       <div style={{ marginTop: 14 }}>
-        <Label>限额</Label>
+        <Label hint="（逗号分隔；留空 = 不限）">上游账号</Label>
+        <Input
+          value={form.accounts}
+          placeholder="openai/acct_xxx, anthropic/…"
+          onChange={(e) => set({ accounts: e.target.value })}
+        />
+      </div>
+
+      <div style={{ marginTop: 14 }}>
+        <Label hint="（tokens 和美元都填 0 表示这条不限）">限额</Label>
         <LimitEditor rows={form.limits} onChange={(limits) => set({ limits })} />
       </div>
 
       <Row gutter={12} style={{ marginTop: 14 }}>
-        <Col span={6}>
-          <Label>并发上限</Label>
-          <InputNumber
-            style={{ width: "100%" }}
-            min={0}
-            max={1000}
-            controls={false}
-            placeholder="0 = 不限"
-            value={form.concurrency || null}
-            onChange={(concurrency) => set({ concurrency: Number(concurrency ?? 0) })}
-          />
-        </Col>
-        <Col span={6}>
+        <Col span={8}>
           <Label>有效期（天）</Label>
           <InputNumber
             style={{ width: "100%" }}
@@ -440,10 +489,18 @@ export function BatchModal({ open, onClose, onSubmit, templates, providers, grou
             onChange={(days) => set({ days: Number(days ?? 0) })}
           />
         </Col>
-        <Col span={12} style={{ display: "flex", alignItems: "flex-end", paddingBottom: 4 }}>
-          <Space size={16}>
-            <Checkbox checked={form.readOnly} onChange={(e) => set({ readOnly: e.target.checked })}>
-              只读
+        <Col span={16} style={{ display: "flex", alignItems: "flex-end", paddingBottom: 4 }}>
+          <Space size={16} wrap>
+            <Tooltip title="只读 key 只能查用量和余额，不能调用任何模型或写接口。">
+              <Checkbox checked={form.readOnly} onChange={(e) => set({ readOnly: e.target.checked })}>
+                只读
+              </Checkbox>
+            </Tooltip>
+            <Checkbox checked={form.quotas} onChange={(e) => set({ quotas: e.target.checked })}>
+              允许查看上游账号余额
+            </Checkbox>
+            <Checkbox checked={form.issues} onChange={(e) => set({ issues: e.target.checked })}>
+              允许签发子 key
             </Checkbox>
             <Checkbox checked={form.off} onChange={(e) => set({ off: e.target.checked })}>
               先停用
@@ -511,12 +568,6 @@ export function IssuedModal({ open, keys, onClose, onCopy, onExport }: IssuedPro
         </div>
       }
     >
-      <Alert
-        type="warning"
-        showIcon
-        message="密钥只在这里显示一次，关掉之前先复制或导出。"
-        style={{ marginBottom: 12 }}
-      />
       <Table<IssuedKey>
         size="small"
         rowKey="secret"
@@ -524,6 +575,12 @@ export function IssuedModal({ open, keys, onClose, onCopy, onExport }: IssuedPro
         columns={columns}
         pagination={false}
         scroll={{ y: 320 }}
+      />
+      <Alert
+        type="warning"
+        showIcon
+        message="密钥只在这里显示一次，关掉之前先复制或导出。"
+        style={{ marginTop: 12 }}
       />
     </Modal>
   );
@@ -537,6 +594,7 @@ interface DetailProps extends CommonProps {
   onClose(): void;
   onSave(body: KeyPayload): Promise<void>;
   onRotate(): void;
+  onResetLimits(): void;
   onDelete(): void;
   onCopySecret(): void;
 }
@@ -547,7 +605,6 @@ interface DetailForm {
   models: string;
   accounts: string;
   limits: LimitRow[];
-  concurrency: number;
   off: boolean;
   readOnly: boolean;
   quotas: boolean;
@@ -561,7 +618,6 @@ function detailForm(key: KeyRow | null): DetailForm {
     models: (key?.models || []).join(", "),
     accounts: (key?.accounts || []).join(", "),
     limits: toLimitRows(key?.limits),
-    concurrency: key?.maxConcurrency || 0,
     off: !!key?.off,
     readOnly: !!key?.readOnly,
     quotas: !!key?.quotas,
@@ -575,43 +631,57 @@ export function DetailModal({
   onClose,
   onSave,
   onRotate,
+  onResetLimits,
   onDelete,
   onCopySecret,
   providers,
   groups,
-  onGroup,
 }: DetailProps) {
   const [form, setForm] = React.useState<DetailForm>(() => detailForm(record));
   const [err, setErr] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  const [confirmClose, setConfirmClose] = React.useState(false);
 
   React.useEffect(() => {
     if (open) {
       setForm(detailForm(record));
       setErr("");
       setBusy(false);
+      setConfirmClose(false);
     }
   }, [open, record]);
 
   if (!record) return null;
   const isDefault = !!record.default;
   const set = (patch: Partial<DetailForm>) => setForm((f) => ({ ...f, ...patch }));
+  // 点关闭时如果表单改过，先确认一次：这个弹窗里的改动没有自动保存。
+  const dirty = JSON.stringify(form) !== JSON.stringify(detailForm(record));
+  const requestClose = () => {
+    if (busy) return;
+    if (!dirty) {
+      onClose();
+      return;
+    }
+    setConfirmClose(true);
+  };
 
   const save = async () => {
     if (busy) return;
     setBusy(true);
     setErr("");
     try {
-      await onSave({
+      const body: KeyPayload = {
         limits: readLimits(form.limits),
         models: form.models,
         accounts: form.accounts,
-        maxConcurrency: Number(form.concurrency || 0),
         quotas: form.quotas,
         issues: form.issues,
-        expires: expiresBody(form.expires),
         ...(isDefault ? {} : { name: form.name, off: form.off, readOnly: form.readOnly }),
-      });
+      };
+      // 没动到期时间就不发：已过期的 key 也能保存，日期不会被改写成过去。
+      const before = record.expires ? record.expires.slice(0, 10) : "";
+      if (form.expires !== before) body.expires = expiresBody(form.expires);
+      await onSave(body);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
       setBusy(false);
@@ -619,28 +689,36 @@ export function DetailModal({
   };
 
   return (
-    <Modal
-      open={open}
-      title={record.name || "(未命名)"}
-      width={680}
-      onCancel={onClose}
-      maskClosable={false}
-      destroyOnHidden
-      footer={
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button danger onClick={onDelete}>
-            删除
-          </Button>
-          <Button onClick={onRotate}>轮换密钥</Button>
-          <Button onClick={onCopySecret}>复制密钥</Button>
-          <span style={{ flex: 1 }} />
-          <Button onClick={onClose}>关闭</Button>
-          <Button type="primary" loading={busy} onClick={save}>
-            保存
-          </Button>
-        </div>
-      }
-    >
+    <>
+      <Modal
+        open={open}
+        title={record.name || "(未命名)"}
+        width={680}
+        onCancel={requestClose}
+        maskClosable={false}
+        destroyOnHidden
+        footer={
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Tooltip title={isDefault ? "默认共享 key 请到 magpie 的 Gateway 页面删除" : undefined}>
+              <Button danger onClick={onDelete} disabled={isDefault}>
+                删除
+              </Button>
+            </Tooltip>
+            <Button onClick={onResetLimits}>清零已用量</Button>
+            <Tooltip title={isDefault ? "默认共享 key 请到 magpie 的 Gateway 页面轮换" : undefined}>
+              <Button onClick={onRotate} disabled={isDefault}>
+                轮换密钥
+              </Button>
+            </Tooltip>
+            <Button onClick={onCopySecret}>复制密钥</Button>
+            <span style={{ flex: 1 }} />
+            <Button onClick={requestClose}>关闭</Button>
+            <Button type="primary" loading={busy} onClick={save}>
+              保存
+            </Button>
+          </div>
+        }
+      >
       <div style={{ marginBottom: 14 }}>
         <Text code>{record.masked}</Text>
         <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
@@ -660,9 +738,10 @@ export function DetailModal({
           />
         </Col>
         <Col span={6}>
-          <Label>到期</Label>
+          <Label hint={isDefault ? "（默认共享 key 的到期由 magpie 管理）" : undefined}>到期</Label>
           <DatePicker
             style={{ width: "100%" }}
+            disabled={isDefault}
             value={form.expires ? dayjs(form.expires) : null}
             onChange={(d) => set({ expires: d ? d.format("YYYY-MM-DD") : "" })}
           />
@@ -688,56 +767,103 @@ export function DetailModal({
       </div>
 
       <div style={{ marginTop: 14 }}>
+        <Label>当前用量</Label>
+        {record.off ? (
+          <Text type="secondary">已停用，网关不统计用量。</Text>
+        ) : record.budget?.limits?.length ? (
+          <div
+            style={{
+              border: "1px solid rgba(128,128,128,.25)",
+              borderRadius: 8,
+              padding: "6px 10px",
+            }}
+          >
+            {record.budget.limits.map((l, i) => (
+              <div key={i} className="sub" style={{ lineHeight: 1.8 }}>
+                {budgetWindow(l)} ·{" "}
+                {l.costLimit
+                  ? `${fmtCost(l.cost)} / ${fmtCost(l.costLimit)}`
+                  : `${fmtNum(l.tokens)} / ${fmtNum(l.tokenLimit)} tok`}
+                {l.reset ? ` · ${fmtDate(l.reset)} 重置` : ""}
+                {l.spent ? " · 已用尽" : ""}
+                {l.unpriced ? ` · ${fmtNum(l.unpriced)} 次未计价` : ""}
+              </div>
+            ))}
+          </div>
+        ) : record.limits?.length ? (
+          <Text type="secondary">用量暂时取不到（网关连不上或还没认出这把 key）。</Text>
+        ) : (
+          <Text type="secondary">不限</Text>
+        )}
+      </div>
+
+      <div style={{ marginTop: 14 }}>
         <Label>模型</Label>
         <ModelField
           value={form.models}
           onChange={(models) => set({ models })}
           providers={providers}
           groups={groups}
-          onGroup={onGroup}
         />
       </div>
 
-      <Row gutter={12} style={{ marginTop: 14 }}>
-        <Col span={12}>
-          <Label>并发上限</Label>
-          <InputNumber
-            style={{ width: "100%" }}
-            min={0}
-            max={1000}
-            controls={false}
-            placeholder="0 = 不限"
-            value={form.concurrency || null}
-            onChange={(concurrency) => set({ concurrency: Number(concurrency ?? 0) })}
-          />
-        </Col>
-        <Col span={12}>
-          <Label>账号</Label>
-          <Input
-            placeholder="provider/account"
-            value={form.accounts}
-            onChange={(e) => set({ accounts: e.target.value })}
-          />
-        </Col>
-      </Row>
+      <div style={{ marginTop: 14 }}>
+        <Label hint="（逗号分隔；留空 = 不限）">上游账号</Label>
+        <Input
+          value={form.accounts}
+          placeholder="openai/acct_xxx, anthropic/…"
+          onChange={(e) => set({ accounts: e.target.value })}
+        />
+      </div>
 
       <Space size={16} wrap style={{ marginTop: 14 }}>
-        <Checkbox
-          checked={form.readOnly}
-          disabled={isDefault}
-          onChange={(e) => set({ readOnly: e.target.checked })}
-        >
-          只读
-        </Checkbox>
+        <Tooltip title="只读 key 只能查用量和余额，不能调用任何模型或写接口。">
+          <Checkbox
+            checked={form.readOnly}
+            disabled={isDefault}
+            onChange={(e) => set({ readOnly: e.target.checked })}
+          >
+            只读
+          </Checkbox>
+        </Tooltip>
         <Checkbox checked={form.quotas} onChange={(e) => set({ quotas: e.target.checked })}>
-          允许读额度卡片
+          允许查看上游账号余额
         </Checkbox>
-        <Checkbox checked={form.issues} onChange={(e) => set({ issues: e.target.checked })}>
-          可签发短期 key
+        <Checkbox
+          checked={form.issues}
+          disabled={isDefault}
+          onChange={(e) => set({ issues: e.target.checked })}
+        >
+          允许签发子 key
         </Checkbox>
       </Space>
       <Err text={err} />
-    </Modal>
+      </Modal>
+      <Modal
+        open={confirmClose}
+        title="放弃未保存的修改？"
+        onCancel={() => setConfirmClose(false)}
+        maskClosable={false}
+        destroyOnHidden
+        footer={
+          <Space>
+            <Button onClick={() => setConfirmClose(false)}>继续编辑</Button>
+            <Button
+              danger
+              type="primary"
+              onClick={() => {
+                setConfirmClose(false);
+                onClose();
+              }}
+            >
+              放弃修改
+            </Button>
+          </Space>
+        }
+      >
+        <div>「{record.name || record.id}」的改动还没保存，关闭后会丢失。</div>
+      </Modal>
+    </>
   );
 }
 
@@ -747,27 +873,29 @@ interface TemplateModalProps extends CommonProps {
   open: boolean;
   template: TemplateItem | null;
   onClose(): void;
-  onSubmit(name: string, template: Template): Promise<void>;
+  onSubmit(name: string, template: Template, id?: string): Promise<void>;
 }
 
 interface TemplateForm {
   name: string;
   models: string;
+  accounts: string;
   limits: LimitRow[];
-  concurrency: number;
   days: number;
   readOnly: boolean;
   quotas: boolean;
+  issues: boolean;
 }
 
 const blankTemplate = (): TemplateForm => ({
   name: "",
   models: "",
-  limits: [],
-  concurrency: 0,
+  accounts: "",
+  limits: blankLimits(),
   days: 0,
   readOnly: false,
   quotas: false,
+  issues: false,
 });
 
 export function TemplateModal({
@@ -777,7 +905,6 @@ export function TemplateModal({
   onSubmit,
   providers,
   groups,
-  onGroup,
 }: TemplateModalProps) {
   const [form, setForm] = React.useState<TemplateForm>(blankTemplate);
   const [err, setErr] = React.useState("");
@@ -792,11 +919,12 @@ export function TemplateModal({
       setForm({
         name: template.name,
         models: (tpl?.models || []).join(", "),
+        accounts: (tpl?.accounts || []).join(", "),
         limits: toLimitRows(tpl?.limits),
-        concurrency: tpl?.maxConcurrency || 0,
         days: tpl?.expiresInDays || 0,
         readOnly: !!tpl?.readOnly,
         quotas: !!tpl?.quotas,
+        issues: !!tpl?.issues,
       });
     }
     setErr("");
@@ -810,14 +938,19 @@ export function TemplateModal({
     setBusy(true);
     setErr("");
     try {
-      await onSubmit(form.name, {
-        models: form.models.split(/[\n,]/).map((s) => s.trim()).filter(Boolean),
-        limits: readLimits(form.limits),
-        maxConcurrency: Number(form.concurrency || 0),
-        expiresInDays: form.days ? Number(form.days) : undefined,
-        readOnly: form.readOnly,
-        quotas: form.quotas,
-      });
+      await onSubmit(
+        form.name,
+        {
+          models: form.models.split(/[\n,]/).map((s) => s.trim()).filter(Boolean),
+          accounts: form.accounts.split(/[\n,]/).map((s) => s.trim()).filter(Boolean),
+          limits: readLimits(form.limits),
+          expiresInDays: form.days ? Number(form.days) : undefined,
+          readOnly: form.readOnly,
+          quotas: form.quotas,
+          issues: form.issues,
+        },
+        template?.id,
+      );
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
       setBusy(false);
@@ -843,16 +976,15 @@ export function TemplateModal({
     >
       <Row gutter={12}>
         <Col span={14}>
-          <Label>{template ? "名称（模板名不能改）" : "名称"}</Label>
+          <Label>名称</Label>
           <Input
             value={form.name}
-            disabled={!!template}
             maxLength={60}
             onChange={(e) => set({ name: e.target.value })}
             onPressEnter={submit}
           />
         </Col>
-        <Col span={5}>
+        <Col span={10}>
           <Label>有效期（天）</Label>
           <InputNumber
             style={{ width: "100%" }}
@@ -861,17 +993,6 @@ export function TemplateModal({
             controls={false}
             value={form.days || null}
             onChange={(days) => set({ days: Number(days ?? 0) })}
-          />
-        </Col>
-        <Col span={5}>
-          <Label>并发</Label>
-          <InputNumber
-            style={{ width: "100%" }}
-            min={0}
-            max={1000}
-            controls={false}
-            value={form.concurrency || null}
-            onChange={(concurrency) => set({ concurrency: Number(concurrency ?? 0) })}
           />
         </Col>
       </Row>
@@ -883,7 +1004,15 @@ export function TemplateModal({
           onChange={(models) => set({ models })}
           providers={providers}
           groups={groups}
-          onGroup={onGroup}
+        />
+      </div>
+
+      <div style={{ marginTop: 14 }}>
+        <Label hint="（逗号分隔；留空 = 不限）">上游账号</Label>
+        <Input
+          value={form.accounts}
+          placeholder="openai/acct_xxx, anthropic/…"
+          onChange={(e) => set({ accounts: e.target.value })}
         />
       </div>
 
@@ -893,11 +1022,16 @@ export function TemplateModal({
       </div>
 
       <Space size={16} style={{ marginTop: 14 }}>
-        <Checkbox checked={form.readOnly} onChange={(e) => set({ readOnly: e.target.checked })}>
-          只读
-        </Checkbox>
+        <Tooltip title="只读 key 只能查用量和余额，不能调用任何模型或写接口。">
+          <Checkbox checked={form.readOnly} onChange={(e) => set({ readOnly: e.target.checked })}>
+            只读
+          </Checkbox>
+        </Tooltip>
         <Checkbox checked={form.quotas} onChange={(e) => set({ quotas: e.target.checked })}>
-          允许读额度卡片
+          允许查看上游账号余额
+        </Checkbox>
+        <Checkbox checked={form.issues} onChange={(e) => set({ issues: e.target.checked })}>
+          允许签发子 key
         </Checkbox>
       </Space>
       <Err text={err} />
@@ -936,7 +1070,7 @@ export function ConfirmModal({
         </Space>
       }
     >
-      <div style={{ padding: "4px 0" }}>{state?.text}</div>
+      <div style={{ padding: "4px 0", whiteSpace: "pre-line" }}>{state?.text}</div>
     </Modal>
   );
 }

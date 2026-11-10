@@ -1,0 +1,103 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: bun test
+
+      - run: pnpm build
+
+      # magpie installs plugins from git without running build scripts, so the
+      # committed ui/dist must match what the current sources build.
+      - name: verify committed build output
+        run: |
+          if [ -n "$(git status --porcelain -- ui/dist)" ]; then
+            echo "ui/dist is out of date; run pnpm build and commit the result" >&2
+            git status --porcelain -- ui/dist >&2
+            exit 1
+          fi
+
+  publish:
+    needs: check
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      # Trusted publishing needs npm >= 11.5.1; Node 24 ships an 11.x build,
+      # but pin it forward so an older image cannot silently break publishing.
+      - run: npm install -g npm@11
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: verify tag matches package version
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME does not match package.json version $version" >&2
+            exit 1
+          fi
+
+      # The first release is published by hand, before a trusted publisher can
+      # exist. Later tag pushes must not fail just because that version is up.
+      - name: check whether this version is already published
+        id: published
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if npm view "magpie-gateway-admin@$version" version >/dev/null 2>&1; then
+            echo "magpie-gateway-admin@$version is already on npm; skipping publish"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Trusted publishing authenticates through GitHub Actions OIDC, so the
+      # workflow needs id-token: write and no NPM_TOKEN secret.
+      - name: publish
+        if: steps.published.outputs.skip != 'true'
+        run: npm publish --provenance --access public

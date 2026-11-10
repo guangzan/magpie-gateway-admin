@@ -3,7 +3,7 @@ import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { maskSecret, readKeys, updateKeys, writeKeys } from "../lib/store.mjs";
+import { maskSecret, readSettings, readKeys, setLimits, updateKeys, writeKeys } from "../lib/store.mjs";
 
 let dir;
 
@@ -38,6 +38,36 @@ describe("store", () => {
       ),
     );
     expect((await readKeys(dir)).length).toBe(8);
+  });
+
+  // magpie 的 .lock 文件用完不删；它不该让插件的写操作卡住。
+  test("writes while magpie's lock file is already there", async () => {
+    await fsp.writeFile(path.join(dir, "caller-keys.json.lock"), "");
+    await updateKeys(dir, (keys) => {
+      keys.push({ id: "leftover", name: "留着的锁", secret: "sk-magpie-key-" + "b".repeat(48) });
+    });
+    expect((await readKeys(dir))[0].name).toBe("留着的锁");
+  });
+
+  // 读不懂的 settings.json 不能被当成空对象，否则默认共享 key 会被当成普通 key。
+  test("corrupt settings throw instead of guessing", async () => {
+    await fsp.writeFile(path.join(dir, "settings.json"), "{oops");
+    await expect(readSettings(dir)).rejects.toThrow();
+    await fsp.writeFile(path.join(dir, "settings.json"), "[]");
+    await expect(readSettings(dir)).rejects.toThrow();
+  });
+
+  test("setLimits splits into limit and moreLimits", () => {
+    const key = {};
+    setLimits(key, [
+      { period: "day", tokens: 1, cost: 0 },
+      { period: "week", tokens: 2, cost: 0 },
+    ]);
+    expect(key.limit.period).toBe("day");
+    expect(key.moreLimits).toEqual([{ period: "week", tokens: 2, cost: 0 }]);
+    setLimits(key, []);
+    expect(key.limit).toBeUndefined();
+    expect(key.moreLimits).toBeUndefined();
   });
 
   test("masking never reveals the middle", () => {

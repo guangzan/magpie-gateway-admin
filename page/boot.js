@@ -6,10 +6,10 @@
     if (said) said.textContent = text;
   };
 
-  const ready = (window.magpie && window.magpie.ready) || Promise.resolve({});
+  const ready = (window.magpie && window.magpie.ready) || Promise.resolve(null);
 
   ready
-    .then(async () => {
+    .then(async (theme) => {
       let port = 3478;
       try {
         const options = await window.magpie.options.get();
@@ -21,7 +21,20 @@
       // magpie web 时是经 magpie 反代的地址；桌面窗口里是空串，直连 127.0.0.1。
       const base = window.magpie.service || `http://127.0.0.1:${port}/`;
       say("正在打开管理界面…");
-      location.replace(base);
+      // 主题只在 bridge 里有效，跳转后就丢了；把深浅先带过去，界面再自己
+      // 跟窗口要 token 并继续接收切换。
+      let target;
+      try {
+        target = new URL(base, location.href);
+        if (theme && typeof theme.dark === "boolean") {
+          const hash = new URLSearchParams();
+          hash.set("t", theme.dark ? "dark" : "light");
+          target.hash = hash.toString();
+        }
+      } catch {
+        target = base;
+      }
+      location.replace(target.toString());
     })
     .catch((err) => {
       say(`连接失败：${(err && err.message) || err}`);

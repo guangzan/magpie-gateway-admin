@@ -1,4 +1,4 @@
-import { Input, Tag, Typography } from "antd";
+import { Input, Tag } from "antd";
 
 import type { CatalogModel } from "../types";
 
@@ -7,10 +7,9 @@ interface Props {
   onChange(value: string): void;
   providers: string[];
   groups: CatalogModel[];
-  onGroup(id: string): void;
 }
 
-export default function ModelField({ value, onChange, providers, groups, onGroup }: Props) {
+export default function ModelField({ value, onChange, providers, groups }: Props) {
   const add = (model: string) => {
     const current = String(value || "")
       .split(/[\n,]/)
@@ -34,15 +33,15 @@ export default function ModelField({ value, onChange, providers, groups, onGroup
             {p}/*
           </Tag>
         ))}
-        {groups.slice(0, 6).map((g) => (
+        {/* magpie 的 key 模型白名单接受 group/<id> 和 group/*，auto/* 也能用；
+            点一下直接加进白名单，别再把人劝退去手写。 */}
+        {groups.slice(0, 8).map((g) => (
           <Tag
             key={g.id}
-            style={{ margin: 0, cursor: "help", opacity: 0.7 }}
-            onClick={() => onGroup(g.id)}
+            style={{ margin: 0, cursor: "pointer", color: "inherit" }}
+            onClick={() => add(g.id)}
           >
-            <Typography.Text delete type="secondary" style={{ fontSize: 12 }}>
-              {g.id}
-            </Typography.Text>
+            {g.id}
           </Tag>
         ))}
       </div>

@@ -18,6 +18,9 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    proxy: { "/api": "http://127.0.0.1:3478" },
+    // 服务会校验 Host/Origin；开发代理要改成目标 Host，Origin 仍是 localhost。
+    proxy: {
+      "/api": { target: "http://127.0.0.1:3478", changeOrigin: true },
+    },
   },
 });

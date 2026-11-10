@@ -1,8 +1,17 @@
 {
   "name": "magpie-gateway-admin",
-  "version": "0.1.0",
-  "private": true,
+  "version": "1.0.0",
   "description": "多用户（多 key）管理 magpie 网关：批量发 key、限额、模型权限、用量看板",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/guangzan/magpie-gateway-admin.git"
+  },
+  "homepage": "https://github.com/guangzan/magpie-gateway-admin#readme",
+  "bugs": {
+    "url": "https://github.com/guangzan/magpie-gateway-admin/issues"
+  },
+  "packageManager": "pnpm@12.15.0",
   "type": "module",
   "main": "index.mjs",
   "exports": {
@@ -12,20 +21,25 @@
     "index.mjs",
     "lib",
     "page",
-    "ui",
-    "README.md"
+    "ui/dist",
+    "README.md",
+    "README.en.md",
+    "LICENSE",
+    "NOTICE"
   ],
   "scripts": {
     "test": "bun test",
     "serve": "bun run serve.mjs",
     "typecheck": "tsc --noEmit -p ui/tsconfig.json",
-    "build": "npm run typecheck && vite build --config ui/vite.config.ts",
+    "build": "pnpm run typecheck && vite build --config ui/vite.config.ts",
     "dev:ui": "vite --config ui/vite.config.ts"
   },
   "keywords": [
     "magpie",
     "magpie-plugin",
-    "magpie-page"
+    "magpie-page",
+    "opencode",
+    "opencode-plugin"
   ],
   "engines": {
     "bun": ">=1.1"
@@ -49,14 +63,15 @@
       "port": 3478
     }
   },
-  "dependencies": {
+  "dependencies": {},
+  "devDependencies": {
     "@ant-design/icons": "^6.3.4",
     "antd": "^6.7.0",
+    "antd-style": "^4.1.0",
+    "clsx": "^2.1.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "zustand": "^5.1.0"
-  },
-  "devDependencies": {
+    "zustand": "^5.1.0",
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import {
+  Alert,
   Button,
   Card,
   Col,
@@ -36,6 +37,7 @@ export default function UsageView() {
   const setUsagePeriod = useShell((s) => s.setUsagePeriod);
   const setUsageFilter = useShell((s) => s.setUsageFilter);
   const setUsageQuery = useShell((s) => s.setUsageQuery);
+  const setUsageCallerKey = useShell((s) => s.setUsageCallerKey);
 
   useEffect(() => {
     void loadUsage();
@@ -44,14 +46,19 @@ export default function UsageView() {
 
   const names = new Map(keys.map((k) => [k.id, k.name]));
   const summary = usage.summary;
+  // 没加载成功时显示「—」，不能显示 0：0 和「取不到」在报表上是两件事。
+  const value = (n?: number) => (usage.loaded && n != null ? fmtNum(n) : "—");
+  const money = (n?: number) => (usage.loaded && n != null ? fmtCost(n) : "—");
 
   const cards: [string, string][] = [
-    ["调用", fmtNum(summary.calls)],
-    ["错误", fmtNum(summary.errors)],
-    ["花费", fmtCost(summary.cost)],
-    ["输入", fmtNum(summary.input)],
-    ["输出", fmtNum(summary.output)],
-    ["缓存读", fmtNum(summary.cache_read)],
+    ["调用", value(summary.calls)],
+    ["错误", value(summary.errors)],
+    ["花费（估算）", money(summary.cost)],
+    ["未计价调用", value(summary.unpriced)],
+    ["输入", value(summary.input)],
+    ["输出", value(summary.output)],
+    ["缓存读", value(summary.cache_read)],
+    ["缓存写", value(summary.cache_write)],
   ];
 
   const groupColumns: TableProps<UsageGroup>["columns"] = [
@@ -67,23 +74,62 @@ export default function UsageView() {
         );
       },
     },
-    { title: "调用", dataIndex: "calls", width: 90, align: "right", render: (v) => fmtNum(v) },
-    { title: "错误", dataIndex: "errors", width: 90, align: "right", render: (v) => fmtNum(v) },
-    { title: "输入", dataIndex: "input", width: 100, align: "right", render: (v) => fmtNum(v) },
-    { title: "输出", dataIndex: "output", width: 100, align: "right", render: (v) => fmtNum(v) },
+    {
+      title: "调用",
+      dataIndex: "calls",
+      width: 90,
+      align: "right",
+      sorter: (a, b) => (a.calls || 0) - (b.calls || 0),
+      render: (v) => fmtNum(v),
+    },
+    {
+      title: "错误",
+      dataIndex: "errors",
+      width: 90,
+      align: "right",
+      sorter: (a, b) => (a.errors || 0) - (b.errors || 0),
+      render: (v) => fmtNum(v),
+    },
+    {
+      title: "输入",
+      dataIndex: "input",
+      width: 100,
+      align: "right",
+      sorter: (a, b) => (a.input || 0) - (b.input || 0),
+      render: (v) => fmtNum(v),
+    },
+    {
+      title: "输出",
+      dataIndex: "output",
+      width: 100,
+      align: "right",
+      sorter: (a, b) => (a.output || 0) - (b.output || 0),
+      render: (v) => fmtNum(v),
+    },
     {
       title: "缓存读",
       dataIndex: "cache_read",
       width: 100,
       align: "right",
+      sorter: (a, b) => (a.cache_read || 0) - (b.cache_read || 0),
       render: (v) => fmtNum(v),
     },
     {
-      title: "花费",
+      title: "花费（估算）",
       dataIndex: "cost",
-      width: 100,
+      width: 110,
       align: "right",
-      render: (v) => fmtCost(v),
+      sorter: (a, b) => (a.cost || 0) - (b.cost || 0),
+      render: (v, row) => (
+        <span>
+          {fmtCost(v)}
+          {(row.unpriced || 0) > 0 ? (
+            <Typography.Text type="warning" style={{ fontSize: 11, marginLeft: 2 }}>
+              *
+            </Typography.Text>
+          ) : null}
+        </span>
+      ),
     },
   ];
 
@@ -149,7 +195,32 @@ export default function UsageView() {
         <Button icon={<ReloadOutlined />} loading={usage.loading} onClick={() => void loadUsage()}>
           刷新
         </Button>
+        {usage.updatedAt ? (
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            更新于 {new Date(usage.updatedAt).toLocaleTimeString("zh-CN", { hour12: false })}
+          </Text>
+        ) : null}
       </div>
+
+      {usage.error ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="用量取不到"
+          description={
+            <span>
+              {usage.error}
+              {usage.loaded ? " 下面显示的是上一次成功加载的数据。" : ""}
+            </span>
+          }
+          action={
+            <Button size="small" onClick={() => void loadUsage()}>
+              重试
+            </Button>
+          }
+        />
+      ) : null}
 
       <Row gutter={[12, 12]}>
         {cards.map(([label, value]) => (
@@ -160,19 +231,43 @@ export default function UsageView() {
           </Col>
         ))}
       </Row>
+      <Text type="secondary" style={{ fontSize: 12, display: "block", marginTop: 6 }}>
+        花费按网关价格估算；未计价调用按 $0 计，不计入美元限额。统计区间以运行网关的机器时区为准。
+      </Text>
 
       <div style={{ margin: "18px 0 10px" }}>
         <Text strong>按 key</Text>
+        <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+          点一行，下面只看这把 key 的请求
+        </Text>
       </div>
       <Card styles={{ body: { padding: 0 } }}>
         <Table<UsageGroup>
           rowKey={(row) => row.callerKeyId || row.id || ""}
-          size="middle"
+          size="small"
           dataSource={usage.groups}
           columns={groupColumns}
           pagination={false}
           scroll={{ x: 760 }}
-          locale={{ emptyText: "这段时间没有按 key 归集的调用。" }}
+          locale={{
+            emptyText: usage.error
+              ? "用量取不到，见上方提示。"
+              : usage.loaded
+                ? "这段时间没有按 key 归集的调用。"
+                : "加载中…",
+          }}
+          onRow={(row) => {
+            const id = row.callerKeyId || row.id || "";
+            if (!id) return {};
+            return {
+              onClick: () => setUsageCallerKey(id),
+              style: { cursor: "pointer" },
+              title: "只看这把 key 的请求",
+            };
+          }}
+          rowClassName={(row) =>
+            (row.callerKeyId || row.id || "") === usage.callerKey ? "ant-table-row-selected" : ""
+          }
         />
       </Card>
 
@@ -180,6 +275,18 @@ export default function UsageView() {
         <Text strong>最近请求</Text>
       </div>
       <Space wrap style={{ marginBottom: 12 }}>
+        {usage.callerKey ? (
+          <Tag
+            closable
+            color="blue"
+            onClose={(e) => {
+              e.preventDefault();
+              setUsageCallerKey("");
+            }}
+          >
+            只看 {names.get(usage.callerKey) || usage.callerKey}
+          </Tag>
+        ) : null}
         <Select
           value={usage.filter}
           style={{ width: 120 }}
@@ -210,7 +317,14 @@ export default function UsageView() {
           columns={requestColumns}
           pagination={false}
           scroll={{ x: 960 }}
-          locale={{ emptyText: "没有请求。" }}
+          loading={usage.loading}
+          locale={{
+            emptyText: usage.error
+              ? "请求明细取不到，见上方提示。"
+              : usage.loaded
+                ? "没有请求。"
+                : "加载中…",
+          }}
         />
       </Card>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>

@@ -13,9 +13,10 @@ interface Props {
   onNew(): void;
   onEdit(item: TemplateItem): void;
   onDelete(item: TemplateItem): void;
+  onUse(item: TemplateItem): void;
 }
 
-export default function TemplatesView({ templates, loading, onNew, onEdit, onDelete }: Props) {
+export default function TemplatesView({ templates, loading, onNew, onEdit, onDelete, onUse }: Props) {
   const columns: TableProps<TemplateItem>["columns"] = [
     { title: "名称", dataIndex: "name", width: 200 },
     {
@@ -43,12 +44,6 @@ export default function TemplatesView({ templates, loading, onNew, onEdit, onDel
       },
     },
     {
-      title: "并发",
-      width: 90,
-      align: "right",
-      render: (_, row) => row.template?.maxConcurrency || "—",
-    },
-    {
       title: "到期",
       width: 100,
       align: "right",
@@ -57,10 +52,13 @@ export default function TemplatesView({ templates, loading, onNew, onEdit, onDel
     },
     {
       title: "操作",
-      width: 130,
+      width: 190,
       align: "right",
       render: (_, row) => (
         <Space size={2}>
+          <Button type="link" size="small" onClick={() => onUse(row)}>
+            用此模板发 key
+          </Button>
           <Button type="link" size="small" onClick={() => onEdit(row)}>
             编辑
           </Button>
@@ -79,13 +77,13 @@ export default function TemplatesView({ templates, loading, onNew, onEdit, onDel
           新建模板
         </Button>
         <Text type="secondary" style={{ fontSize: 12 }}>
-          模板决定批量发 key 时的模型、限额、并发与到期。
+          模板决定批量发 key 时的模型、账号、限额与到期。
         </Text>
       </div>
       <Card styles={{ body: { padding: 0 } }}>
         <Table<TemplateItem>
           rowKey="id"
-          size="middle"
+          size="small"
           loading={loading}
           dataSource={templates}
           columns={columns}

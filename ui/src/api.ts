@@ -48,14 +48,6 @@ export async function api<T>(path: string, { method = "GET", body }: RequestOpti
   return data as T;
 }
 
-export async function rawExport(period: string): Promise<string> {
-  const res = await fetch(`api/export?period=${encodeURIComponent(period)}`, {
-    headers: { "x-magpie-admin-token": TOKEN },
-  });
-  if (!res.ok) throw new ApiError(`导出失败：HTTP ${res.status}`, { status: res.status });
-  return res.text();
-}
-
 export function hasToken(): boolean {
   return Boolean(TOKEN);
 }
