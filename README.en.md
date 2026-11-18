@@ -33,7 +33,7 @@ magpie's built-in Gateway page is designed for a single user: one shared key tha
 
    ```bash
    # From npm
-   magpie plugin add magpie-gateway-admin
+   magpie plugin add npm:magpie-gateway-admin
 
    # From GitHub (no npm needed; uses the build output committed in the repo)
    magpie plugin add github:guangzan/magpie-gateway-admin
@@ -97,7 +97,7 @@ Requires magpie ≥ 0.1.3078 (older versions do not have plugin pages). The plug
 
 ```bash
 # From npm
-magpie plugin add magpie-gateway-admin
+magpie plugin add npm:magpie-gateway-admin
 
 # From GitHub (no npm needed; uses the build output committed in the repo)
 magpie plugin add github:guangzan/magpie-gateway-admin
